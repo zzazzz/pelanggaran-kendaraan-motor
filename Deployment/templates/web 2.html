@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Prediction Results</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-top: 20px;
+        }
+
+        table {
+            width: 80%;
+            margin-top: 20px;
+            border-collapse: collapse;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            background-color: #fff;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .class-helm {
+            color: #008000;
+            font-weight: bold;
+        }
+
+        .class-no-helm {
+            color: #e60000;
+            font-weight: bold;
+        }
+
+        .pengendara-img {
+            max-width: 400px; /* Ukuran gambar pengendara diperbesar */
+            max-height: 400px;
+            object-fit: cover;
+        }
+
+        .cropped-img {
+            max-width: 100px;
+            max-height: 100px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Prediction Results</h1>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Pengendara</th>
+                <th>Cropped Image</th>
+                <th>Classes</th>
+                <th>Confidence</th>
+                <th>Pred Box</th>
+                <th>Kelayakan</th>
+                <th>Jenis Pelanggaran</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for index, row in new_df.iterrows() %}
+            <tr>
+                {% if loop.index == 1 %}
+                <td rowspan="{{ new_df.shape[0] }}">
+                    <img src="{{ url_for('static', filename=row['cropped_image_paths'].replace('static/', '')) }}" alt="Detected Image" class="pengendara-img">
+                </td>
+                {% endif %}
+                <td><img src="{{ url_for('static', filename=row['cropped_image_saved_path'].replace('static/', '')) }}" alt="Cropped Image" class="cropped-img"></td>
+                <td class="{% if row['cls'] == 1 %}class-helm{% elif row['cls'] == 3 %}class-no-helm{% endif %}">
+                    {% if row['cls'] == 1 %}
+                    Helm
+                    {% elif row['cls'] == 3 %}
+                    No-Helm
+                    {% else %}
+                    {{ row['cls'] }}
+                    {% endif %}
+                </td>
+                <td>{{ row['confidence'] }}</td>
+                <td>{{ row['pred_box'] }}</td>
+                <td>{{ row['kelayakan'] }}</td>
+                <td>{{ row['jenis_pelanggaran'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+
+</html>

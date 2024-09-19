@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Prediction Results</title>
+    <!-- Tambahkan CSS atau styling jika diperlukan -->
+    <style>
+        /* CSS styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <h1>Prediction Results</h1>
+
+    <!-- Tambahkan konten yang ingin ditampilkan -->
+    <table>
+        <thead>
+            <tr>
+                <!-- Ganti dengan nama kolom yang sesuai di DataFrame Anda -->
+                <th>Pengendara</th>
+                <th>Cropped Image Path</th>
+                <th>classes</th>
+                <th>Confidence</th>
+                <th>Pred Box</th>
+                <th>Kelayakan</th>
+                <th>Jenis Pelanggaran</th>
+                <!-- Tambahkan kolom-kolom lain sesuai kebutuhan -->
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Gunakan loop untuk menampilkan hasil prediksi -->
+            {% for index, row in new_df.iterrows() %}
+                <tr>
+                    <!-- Ganti 'image_path', 'cropped_image_saved_path', 'cls', 'confidence', 'pred_box' -->
+                    <td>{{ row['image_path'] }}</td>
+                    <td>{{ row['cropped_image_saved_path'] }}</td>
+                    <td>
+                        {% if row['cls'] == 1 %}
+                            Helm
+                        {% elif row['cls'] == 3 %}
+                            No-Helm
+                        {% else %}
+                            {{ row['cls'] }}  <!-- Nilai lain jika tidak sesuai kondisi -->
+                        {% endif %}
+                    </td>
+                    <td>{{ row['confidence'] }}</td>
+                    <td>{{ row['pred_box'] }}</td>
+                    <td>{{row['kelayakan']}} </td>
+                    <td>{{row['jenis_pelanggaran']}}</td>
+                    <!-- Tambahkan kolom-kolom lain sesuai kebutuhan -->
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Tambahkan elemen atau konten lainnya jika diperlukan -->
+
+</body>
+</html>
