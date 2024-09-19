@@ -1,0 +1,13 @@
+roboflow
+ultralytics
+plotly
+numpy
+torch
+pandas
+matplotlib
+opencv-python
+scikit-learn
+transformers
+datasets
+Pillow
+ngrok
