@@ -2428,5 +2428,186 @@
         "summary_ocr": "-"
       }
     ]
+  },
+  {
+    "analysis_id": "20260407_092002_887947",
+    "timestamp": "07 Apr 2026, 09:20",
+    "original_image": "uploads/i16_screenshot-2023-11-30-151900_jpg.rf.0ce5901ea00d34fa1c8ee76a1fed4587_20260407_092002_887947.jpg",
+    "detected_image": "runs/detect/object_20260407_092002_887947/cropped_image_20260407_092002_887947_0.jpg",
+    "kelayakan": "Pengendara Tidak Layak",
+    "jenis_pelanggaran": "Tidak menggunakan helm & pajak motor mati",
+    "summary_counts": {
+      "exp-date": 1,
+      "helm": 1,
+      "licence-plate": 1,
+      "no-helm": 1
+    },
+    "total_objects": 4,
+    "class_groups": [
+      {
+        "label": "exp-date",
+        "title": "📅 Exp-Date",
+        "count": 1,
+        "items": [
+          {
+            "cropped_image_saved_path": "images/exp-date/cropped_exp-date_2.jpg",
+            "confidence_pct": 85,
+            "confidence_class": "success",
+            "cls_display": "📅 Exp-Date: 2505",
+            "ocr_text": "2505",
+            "kelayakan": "Pengendara Tidak Layak",
+            "pred_box": [
+              421,
+              206,
+              451,
+              226
+            ],
+            "group_text": "📅 Exp-Date"
+          }
+        ],
+        "primary_item": {
+          "cropped_image_saved_path": "images/exp-date/cropped_exp-date_2.jpg",
+          "confidence_pct": 85,
+          "confidence_class": "success",
+          "cls_display": "📅 Exp-Date: 2505",
+          "ocr_text": "2505",
+          "kelayakan": "Pengendara Tidak Layak",
+          "pred_box": [
+            421,
+            206,
+            451,
+            226
+          ],
+          "group_text": "📅 Exp-Date"
+        },
+        "summary_text": "📅 Exp-Date: 2505",
+        "summary_confidence": 85,
+        "summary_kelayakan": "Pengendara Tidak Layak",
+        "summary_ocr": "2505"
+      },
+      {
+        "label": "helm",
+        "title": "🪖 Helm",
+        "count": 1,
+        "items": [
+          {
+            "cropped_image_saved_path": "images/helm/cropped_helm_0.jpg",
+            "confidence_pct": 86,
+            "confidence_class": "success",
+            "cls_display": "🪖 Helm",
+            "ocr_text": "-",
+            "kelayakan": "Pengendara Tidak Layak",
+            "pred_box": [
+              155,
+              9,
+              261,
+              97
+            ],
+            "group_text": "🪖 Helm"
+          }
+        ],
+        "primary_item": {
+          "cropped_image_saved_path": "images/helm/cropped_helm_0.jpg",
+          "confidence_pct": 86,
+          "confidence_class": "success",
+          "cls_display": "🪖 Helm",
+          "ocr_text": "-",
+          "kelayakan": "Pengendara Tidak Layak",
+          "pred_box": [
+            155,
+            9,
+            261,
+            97
+          ],
+          "group_text": "🪖 Helm"
+        },
+        "summary_text": "Helm terdeteksi",
+        "summary_confidence": 86,
+        "summary_kelayakan": "Pengendara Tidak Layak",
+        "summary_ocr": "-"
+      },
+      {
+        "label": "licence-plate",
+        "title": "🔢 Plat Nomor",
+        "count": 1,
+        "items": [
+          {
+            "cropped_image_saved_path": "images/licence-plate/cropped_licence-plate_3.jpg",
+            "confidence_pct": 91,
+            "confidence_class": "success",
+            "cls_display": "🔢 Plat: Z360525",
+            "ocr_text": "Z360525",
+            "kelayakan": "Pengendara Tidak Layak",
+            "pred_box": [
+              361,
+              188,
+              453,
+              250
+            ],
+            "group_text": "🔢 Plat Nomor"
+          }
+        ],
+        "primary_item": {
+          "cropped_image_saved_path": "images/licence-plate/cropped_licence-plate_3.jpg",
+          "confidence_pct": 91,
+          "confidence_class": "success",
+          "cls_display": "🔢 Plat: Z360525",
+          "ocr_text": "Z360525",
+          "kelayakan": "Pengendara Tidak Layak",
+          "pred_box": [
+            361,
+            188,
+            453,
+            250
+          ],
+          "group_text": "🔢 Plat Nomor"
+        },
+        "summary_text": "Z360525",
+        "summary_confidence": 91,
+        "summary_kelayakan": "Pengendara Tidak Layak",
+        "summary_ocr": "Z360525"
+      },
+      {
+        "label": "no-helm",
+        "title": "⚠ No-Helm",
+        "count": 1,
+        "items": [
+          {
+            "cropped_image_saved_path": "images/no-helm/cropped_no-helm_1.jpg",
+            "confidence_pct": 72,
+            "confidence_class": "success",
+            "cls_display": "⚠ No-Helm",
+            "ocr_text": "-",
+            "kelayakan": "Pengendara Tidak Layak",
+            "pred_box": [
+              28,
+              42,
+              131,
+              109
+            ],
+            "group_text": "⚠ No-Helm"
+          }
+        ],
+        "primary_item": {
+          "cropped_image_saved_path": "images/no-helm/cropped_no-helm_1.jpg",
+          "confidence_pct": 72,
+          "confidence_class": "success",
+          "cls_display": "⚠ No-Helm",
+          "ocr_text": "-",
+          "kelayakan": "Pengendara Tidak Layak",
+          "pred_box": [
+            28,
+            42,
+            131,
+            109
+          ],
+          "group_text": "⚠ No-Helm"
+        },
+        "summary_text": "Tidak menggunakan helm",
+        "summary_confidence": 72,
+        "summary_kelayakan": "Pengendara Tidak Layak",
+        "summary_ocr": "-"
+      }
+    ]
   }
 ]

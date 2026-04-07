@@ -492,5 +492,4 @@ def detect_object():
 
 
 if __name__ == "__main__":
-    ensure_dirs()
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    app.run(host="0.0.0.0", port=10000)
