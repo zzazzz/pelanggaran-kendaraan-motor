@@ -1,297 +1,496 @@
-from flask import Flask, request, jsonify, render_template
+import os
+import json
+import traceback
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Any
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
+os.environ["TRANSFORMERS_NO_TENSORFLOW"] = "1"
+os.environ["USE_TORCH"] = "1"
+
+from flask import Flask, request, render_template
 from PIL import Image
 import pandas as pd
-from ultralytics import YOLO
-import numpy as np
-import io
-import os
 import cv2
+from ultralytics import YOLO
 from transformers import TrOCRProcessor, VisionEncoderDecoderModel
-import nest_asyncio
-from pyngrok import ngrok
-from datetime import datetime
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# If you want to start from the pretrained model, load the checkpoint with `VisionEncoderDecoderModel`
-processor = TrOCRProcessor.from_pretrained('ziyadazz/OCR-PLAT-NOMOR-INDONESIA')
+# ── Paths ─────────────────────────────────────────────────────────────────────
+BASE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = BASE_DIR / "static"
+TEMPLATES_DIR = BASE_DIR / "templates"
+UPLOAD_DIR = STATIC_DIR / "uploads"
+IMAGES_DIR = STATIC_DIR / "images"
+RUNS_DIR = STATIC_DIR / "runs" / "detect"
+HISTORY_FILE = STATIC_DIR / "history.json"
 
-# TrOCR is a decoder model and should be used within a VisionEncoderDecoderModel
-model = VisionEncoderDecoderModel.from_pretrained('ziyadazz/OCR-PLAT-NOMOR-INDONESIA')
+ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
 
+
+# ── Load Models ───────────────────────────────────────────────────────────────
+print("Loading TrOCR processor & model...")
+processor = TrOCRProcessor.from_pretrained("ziyadazz/OCR-PLAT-NOMOR-INDONESIA")
+model = VisionEncoderDecoderModel.from_pretrained("ziyadazz/OCR-PLAT-NOMOR-INDONESIA")
+
+print("Loading YOLO models...")
 model_driver = YOLO("best.pt")
-model_object = YOLO("best2.pt")  # Ganti path dengan model yang sesuai
+model_object = YOLO("best2.pt")
 
-@app.route('/')
-def index_view():
-    return render_template('tengah.html')
+LABEL_MAP = {
+    0: "exp-date",
+    1: "helm",
+    2: "licence-plate",
+    3: "no-helm",
+}
 
-@app.route('/predict', methods=['POST'])
-def detect_object():
-    # Get the image file from the request
-    file = request.files['image']
+LABEL_ORDER = ["exp-date", "helm", "licence-plate", "no-helm"]
 
-    # Save the file temporarily (optional)
-    image_path = 'Pengendara.jpg'
-    file.save(image_path)
 
-    results = model_driver.predict(image_path)
+# ── Helpers ──────────────────────────────────────────────────────────────────
+def ensure_dirs() -> None:
+    for p in [UPLOAD_DIR, IMAGES_DIR, RUNS_DIR]:
+        p.mkdir(parents=True, exist_ok=True)
+    if not HISTORY_FILE.exists():
+        HISTORY_FILE.write_text("[]", encoding="utf-8")
 
-    all_box_list = []
-    all_conf_list = []
-    all_cls_list = []
-    cropped_image_paths = []  # Menyimpan path hasil cropping
 
-    for idx, result in enumerate(results):
-        boxes = result.boxes
-        box_list = []
-        conf_list = []
-        cls_list = []
+def allowed_file(filename: str) -> bool:
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-        for box in boxes:
-            conf = round(float(box.conf), 2)
-            cls = int(box.cls)
 
-            if conf >= 0.5:
-                box_data = [int(x) for x in box.xyxy[0].tolist()]
-                box_list.append(box_data)
-                conf_list.append(conf)
-                cls_list.append(cls)
+def rel_static(path: str) -> str:
+    """Return a path relative to /static/ from either an absolute or relative input."""
+    if not path:
+        return path
 
-        all_box_list.append(box_list)
-        all_conf_list.append(conf_list)
-        all_cls_list.append(cls_list)
+    path = str(path).replace("\\", "/")
+    marker = "/static/"
+    idx = path.lower().rfind(marker)
+    if idx != -1:
+        return path[idx + len(marker):]
+    if path.lower().startswith("static/"):
+        return path[len("static/"):]
+    if path.lower().startswith("./static/"):
+        return path[len("./static/"):]
+    return path.lstrip("/")
+    if path.startswith("./static/"):
+        return path[len("./static/"):]
+    return path.lstrip("/")
 
-        # Menyimpan hasil cropping dalam format JPG
-        img = Image.open(image_path)
-        cropped_img = img.crop(box_list[0])  # Ambil kotak pertama
-        cropped_image_path = f'static/images/cropped_image_{idx}.jpg'
-        cropped_img.save(cropped_image_path)
-        cropped_image_paths.append(cropped_image_path)
 
-    data = {
-        'image_original': [file.filename] * len(all_box_list),
-        'boxes': all_box_list,
-        'confidence': all_conf_list,
-        'classes': all_cls_list,
-        'cropped_image_paths': cropped_image_paths  # Menambahkan path hasil cropping ke dalam data
-    }
+def safe_read_json(path: Path) -> List[Dict[str, Any]]:
+    if not path.exists():
+        return []
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
 
-    df = pd.DataFrame(data)
 
-    results = model_object.predict(list(df['cropped_image_paths']),save=True)
+def safe_write_json(path: Path, data: List[Dict[str, Any]]) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    all_box_list = []
-    all_conf_list = []
-    all_cls_list = []
-    rows = []
 
-    for result in results:
-        boxes = result.boxes
-        cls_list = []
-        box_list = []
-        conf_list = []
+def load_history(limit: int = 12) -> List[Dict[str, Any]]:
+    history = safe_read_json(HISTORY_FILE)
+    history = history[-limit:] if len(history) > limit else history
+    history.reverse()
+    return history
 
-        max_confidence_box_0 = None
-        max_confidence_box_2 = None
-        max_confidence_0 = 0
-        max_confidence_2 = 0
 
-        for box in boxes:
-            conf = round(float(box.conf), 2)
-            cls = round(float(box.cls), 2)
+def append_history(entry: Dict[str, Any], max_items: int = 50) -> None:
+    history = safe_read_json(HISTORY_FILE)
+    history.append(entry)
+    history = history[-max_items:]
+    safe_write_json(HISTORY_FILE, history)
 
-            if conf >= 0.2:
-                if cls == 0 and conf > max_confidence_0:
-                    max_confidence_0 = conf
-                    max_confidence_box_0 = box
-                elif cls == 2 and conf > max_confidence_2:
-                    max_confidence_2 = conf
-                    max_confidence_box_2 = box
-                elif cls in [1, 3]:
-                    cls_list.append(cls)
-                    conf_list.append(conf)
-                    box_data = box.data[0][:4]
-                    box_data = [int(x) for x in box_data]
-                    box_list.append(box_data)
 
-        if max_confidence_box_0 is not None:
-            box_data = max_confidence_box_0.data[0][:4]
-            box_data = [int(x) for x in box_data]
-            cls_list.append(0)
-            conf_list.append(max_confidence_0)
-            box_list.append(box_data)
+def check_driver_eligibility(df: pd.DataFrame) -> str:
+    return "Pengendara tidak layak" if (df["cls_raw"] == 3).any() else "Pengendara layak di jalan"
 
-        if max_confidence_box_2 is not None:
-            box_data = max_confidence_box_2.data[0][:4]
-            box_data = [int(x) for x in box_data]
-            cls_list.append(2)
-            conf_list.append(max_confidence_2)
-            box_list.append(box_data)
 
-        all_box_list.append(box_list)
-        all_conf_list.append(conf_list)
-        all_cls_list.append(cls_list)
+def helm_deteksi(df: pd.DataFrame) -> str:
+    return "Pengendara tidak menggunakan helm" if (df["cls_raw"] == 3).any() else "Pengendara menggunakan helm"
 
-    df["pred_box"] = all_box_list
-    df["confidence"] = all_conf_list
-    df['cls'] = all_cls_list
 
-    rows = []
-    for idx, row in df.iterrows():
-        image_path = row['cropped_image_paths']
-        pred_boxes = row['pred_box']
-        confidences = row['confidence']
-        classes = row['cls']
+def balik_prediksi(prediksi):
+    if isinstance(prediksi, str):
+        cleaned = prediksi.replace(" ", "")
+        if cleaned.isdigit() and len(cleaned) == 4:
+            return cleaned[2:] + cleaned[:2]
+    return prediksi
 
-        # Loop untuk setiap prediksi dalam satu baris
-        for i in range(len(pred_boxes)):
-            rows.append({
-                "cropped_image_paths": image_path,
-                "pred_box": pred_boxes[i],
-                "confidence": confidences[i],
-                "cls": classes[i],
-                "image_path":results[0].save_dir
-            })
-    new_df = pd.DataFrame(rows)
 
-    def crop_and_save_image(row):
-        img = cv2.imread(row['cropped_image_paths'])
-        pred_box = row['pred_box']
-        cropped_img = img[pred_box[1]:pred_box[3], pred_box[0]:pred_box[2]]
+def cek_pajak(tanggal, formatted_date):
+    return tanggal > formatted_date
 
-        # Mendapatkan label untuk nama file
-        label_mapping = {0: 'exp-date', 1: 'helm', 2: 'licence-plate', 3: 'no-helm'}
-        label = label_mapping[row['cls']]
 
-        # Buat folder sesuai dengan label jika belum ada
-        folder_name = f'static/images/{label}'  # Ganti 'images' dengan nama folder yang diinginkan
-        os.makedirs(folder_name, exist_ok=True)
+def buat_kesimpulan(deteksi_helm, keterangan):
+    no_helm = deteksi_helm == "Pengendara tidak menggunakan helm"
+    pajak_mati = keterangan == "Pajak motor mati"
+    if no_helm and pajak_mati:
+        return "Tidak menggunakan helm & pajak motor mati"
+    if no_helm:
+        return "Tidak menggunakan helm"
+    if pajak_mati:
+        return "Pajak motor mati"
+    return "Tidak melanggar aturan lalu lintas"
 
-        # Resize semua gambar menjadi 384x384
-        cropped_img = cv2.resize(cropped_img, (384, 384), interpolation=cv2.INTER_AREA)
 
-        # Simpan gambar yang sudah dipotong dalam format JPG sesuai dengan label dan folder
-        cropped_image_path = f'{folder_name}/cropped_{label}_{row.name}.jpg'
-        cv2.imwrite(cropped_image_path, cropped_img)
+def kelayakan(pajak_ok, helm_ok):
+    return "Pengendara Layak" if pajak_ok and helm_ok else "Pengendara Tidak Layak"
 
-        return cropped_image_path
 
-    new_df['cropped_image_saved_path'] = new_df.apply(crop_and_save_image, axis=1)
-    directory = new_df['image_path'].iloc[0]  # Ganti dengan path lengkap ke direktori Anda
+def class_label_from_row(row):
+    cls = int(row["cls_raw"])
+    return LABEL_MAP.get(cls, str(cls))
 
-    # Mendapatkan daftar file dalam direktori
-    files = os.listdir(directory)
 
-    # Filter hanya file gambar (jpg/png)
-    image_files = [file for file in files if file.lower().endswith(('jpg', 'png'))]
+def class_text_from_label(label):
+    return {
+        "helm": "🪖 Helm",
+        "no-helm": "⚠ No-Helm",
+        "licence-plate": "🔢 Plat Nomor",
+        "exp-date": "📅 Exp-Date",
+    }.get(label, label)
 
-    # Buka dan tampilkan setiap gambar dalam direktori
-    for image_file in image_files:
-        image_path = os.path.join(directory, image_file)
-        new_df['image_path']=image_path
-    def check_driver_eligibility(new_df):
-        if (new_df['cls'] == 3).any():
-            return "Pengendara tidak layak"
-        else:
-            return "Pengendara layak di jalan"
-    
-    hasil_pengecekan = check_driver_eligibility(new_df)
-    
-    def helm_deteksi(new_df):
-        if (new_df['cls'] == 3).any():
-            return "Pengendara tidak menggunakan helm"
-        else:
-            return "Pengendara menggunakan helm"
 
-    deteksi_helm = helm_deteksi(new_df)
-    filtered_df = new_df[new_df['cls'].isin([0.0, 2.0])]
-    filtered_df = filtered_df.groupby('cls').apply(lambda x: x.loc[x['confidence'].idxmax()]).reset_index(drop=True)
+def confidence_class(conf: float) -> str:
+    if conf >= 0.7:
+        return "success"
+    if conf >= 0.5:
+        return "warning"
+    return "danger"
+
+
+def crop_and_save_image(row, base_folder="static/images"):
+    img = cv2.imread(row["cropped_image_paths"])
+    if img is None:
+        return row["cropped_image_paths"]
+
+    x1, y1, x2, y2 = row["pred_box"]
+    h, w = img.shape[:2]
+    x1 = max(0, min(int(x1), w - 1))
+    x2 = max(0, min(int(x2), w))
+    y1 = max(0, min(int(y1), h - 1))
+    y2 = max(0, min(int(y2), h))
+
+    cropped_img = img[y1:y2, x1:x2]
+    if cropped_img.size == 0:
+        cropped_img = img
+
+    folder = Path(base_folder) / row["group_label"]
+    folder.mkdir(parents=True, exist_ok=True)
+    cropped_img = cv2.resize(cropped_img, (384, 384), interpolation=cv2.INTER_AREA)
+    save_path = folder / f"cropped_{row['group_label']}_{row.name}.jpg"
+    cv2.imwrite(str(save_path), cropped_img)
+    return str(save_path)
+
+
+def get_detected_image_path(result, fallback_input_path: str) -> str:
+    save_dir = Path(str(result.save_dir))
+    fallback_name = Path(fallback_input_path).name
+
+    # YOLO biasanya menyimpan file annotated dengan nama file input yang sama.
+    guessed = save_dir / fallback_name
+    if guessed.exists():
+        return rel_static(str(guessed))
+
+    candidates = []
+    if save_dir.exists():
+        candidates.extend(sorted(
+            [p for p in save_dir.iterdir() if p.suffix.lower() in {".jpg", ".jpeg", ".png"}],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ))
+    if candidates:
+        return rel_static(str(candidates[0]))
+
+    return rel_static(str(guessed))
+
+
+def prepare_template_data(new_df: pd.DataFrame) -> pd.DataFrame:
+    new_df = new_df.copy()
+    new_df["group_label"] = new_df.apply(class_label_from_row, axis=1)
+    new_df["group_text"] = new_df["group_label"].apply(class_text_from_label)
+    new_df["cls_display"] = new_df["group_text"]
+    new_df["ocr_text"] = "-"
+    new_df["confidence_pct"] = (new_df["confidence"] * 100).round().astype(int)
+    new_df["confidence_class"] = new_df["confidence"].apply(confidence_class)
+
+    # OCR display: plat nomor dan exp-date
+    filtered_df = (
+        new_df[new_df["cls_raw"].isin([0, 2])]
+        .sort_values("confidence", ascending=False)
+        .groupby("cls_raw")
+        .first()
+        .reset_index()
+    )
 
     if filtered_df.empty:
-        new_df['kelayakan']='Pengendara tidak bisa diidentifikasi'
-        return render_template('prediction.html', new_df=new_df)
-    else:
-        pred = []
+        new_df["kelayakan"] = "Tidak dapat diidentifikasi"
+        new_df["jenis_pelanggaran"] = "-"
+        return new_df
 
-        for imges_path in filtered_df['cropped_image_saved_path']:
-            image = Image.open(imges_path).convert("RGB")
+    ocr_results = []
+    for img_path in filtered_df["cropped_image_saved_path"]:
+        try:
+            image = Image.open(img_path).convert("RGB")
             pixel_values = processor(image, return_tensors="pt").pixel_values
             generated_ids = model.generate(pixel_values)
-            generated_text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-            pred.append(generated_text)
+            text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        except Exception:
+            text = "-"
+        ocr_results.append(text)
 
-        filtered_df['cls'] = pred
+    filtered_df["ocr_text"] = ocr_results
 
-        for index, row in filtered_df.iterrows():
-            img_path = row['cropped_image_saved_path']
-            new_value = row['cls']  # Mengambil nilai 'cls' dari filtered_df
-            new_df.loc[new_df['cropped_image_saved_path'] == img_path, 'cls'] = new_value
+    # Simpan OCR ke new_df untuk plat & exp-date
+    for _, row in filtered_df.iterrows():
+        mask = new_df["cropped_image_saved_path"] == row["cropped_image_saved_path"]
+        new_df.loc[mask, "ocr_text"] = row["ocr_text"]
 
-        new_df.loc[new_df['cropped_image_saved_path'].str.contains('static/images/exp-date/'), 'cls']= new_df.loc[new_df['cropped_image_saved_path'].str.contains('static/images/exp-date/'), 'cls'].str.replace(' ', '')
+        if int(row["cls_raw"]) == 2:
+            new_df.loc[mask, "cls_display"] = f"🔢 Plat: {row['ocr_text']}"
+        elif int(row["cls_raw"]) == 0:
+            fixed_text = balik_prediksi(row["ocr_text"].replace(" ", ""))
+            new_df.loc[mask, "ocr_text"] = fixed_text
+            new_df.loc[mask, "cls_display"] = f"📅 Exp-Date: {fixed_text}"
 
-        # Definisikan kembali fungsi balik_prediksi
-        def balik_prediksi(prediksi):
-            if isinstance(prediksi, str) and prediksi.isdigit() and len(prediksi) == 4:
-                return prediksi[2:] + prediksi[:2]
-            else:
-                return prediksi
+    exp_mask = new_df["group_label"].eq("exp-date")
+    if exp_mask.any():
+        tanggal = new_df.loc[exp_mask, "ocr_text"].iloc[0].replace(" ", "")
+        formatted_date = datetime.now().strftime("%y%m")
+        pajak_ok = cek_pajak(tanggal, formatted_date)
+        keterangan = "Pajak motor hidup" if pajak_ok else "Pajak motor mati"
+    else:
+        pajak_ok = True
+        keterangan = "Exp-date tidak terdeteksi"
 
-        # Mengaplikasikan fungsi pada kolom 'Prediksi' dan membuat kolom baru 'Prediksi_Balik'
-        tanggal = new_df.loc[new_df['cropped_image_saved_path'].str.contains('static/images/exp-date/'), 'cls'].apply(balik_prediksi)
-        tanggal = tanggal.iloc[0]
-        today_date = datetime.now().date()
-        formatted_date = today_date.strftime("%y%m")
+    hasil_pengecekan = check_driver_eligibility(new_df)
+    deteksi_helm_str = helm_deteksi(new_df)
+    helm_ok = hasil_pengecekan == "Pengendara layak di jalan"
+    status_kelayakan = kelayakan(pajak_ok, helm_ok)
+    jenis_pelanggaran = buat_kesimpulan(deteksi_helm_str, keterangan)
 
-        def pajak(tanggal, formatted_date):
-            if (tanggal > formatted_date):
-                return 'Pengendara layak di jalan'
-            else:
-                return 'Pengendara tidak layak'
+    new_df["kelayakan"] = status_kelayakan
+    new_df["jenis_pelanggaran"] = jenis_pelanggaran
+    return new_df
 
-        exp_date=pajak(tanggal, formatted_date)
 
-        def pajak_motor(tanggal, formatted_date):
-            if (tanggal > formatted_date):
-                return 'Pajak motor hidup'
-            else:
-                return 'Pajak motor mati'
+def get_class_summary_text(label: str, item: Dict[str, Any]) -> str:
+    if not item:
+        return "-"
+    if label == "helm":
+        return "Helm terdeteksi"
+    if label == "no-helm":
+        return "Tidak menggunakan helm"
+    if label == "licence-plate":
+        return item.get("ocr_text") if item.get("ocr_text") not in (None, "-") else "Plat nomor terdeteksi"
+    if label == "exp-date":
+        return item.get("cls_display") if item.get("cls_display") not in (None, "-") else item.get("ocr_text", "-")
+    return item.get("cls_display") or item.get("ocr_text") or "-"
 
-        keterangan=pajak_motor(tanggal, formatted_date)
 
-        def kelayakan(exp_date, hasil_pengecekan):
-            if exp_date=='Pengendara layak di jalan' and hasil_pengecekan == 'Pengendara layak di jalan':
-                return 'Pengendara Layak'
-            elif exp_date=='Pengendara tidak layak' and hasil_pengecekan == 'Pengendara layak di jalan':
-                return 'Pengendara tidak layak'
-            elif exp_date=='Pengendara layak di jalan' and hasil_pengecekan == 'Pengendara tidak layak':
-                return 'Pengendara tidak layak'
-            elif exp_date=='Pengendara tidak layak' and hasil_pengecekan == 'Pengendara tidak layak':
-                return 'Pengendara tidak layak'
-            else:
-                return 'Kondisi tidak tau'
+def build_class_groups(df: pd.DataFrame) -> List[Dict[str, Any]]:
+    groups = []
+    for label in LABEL_ORDER:
+        subset = df[df["group_label"] == label].copy()
+        items = []
+        for _, row in subset.iterrows():
+            items.append({
+                "cropped_image_saved_path": rel_static(row["cropped_image_saved_path"]),
+                "confidence_pct": int(row["confidence_pct"]),
+                "confidence_class": row["confidence_class"],
+                "cls_display": row["cls_display"],
+                "ocr_text": row["ocr_text"],
+                "kelayakan": row["kelayakan"],
+                "pred_box": row["pred_box"],
+                "group_text": row["group_text"],
+            })
 
-        def buat_kesimpulan(deteksi_helm, keterangan):
-            if deteksi_helm == "Pengendara tidak menggunakan helm" and keterangan == "Pajak motor mati":
-                return "Pengendara tidak menggunakan helm dan pajak motor mati"
-            elif deteksi_helm == "Pengendara tidak menggunakan helm" and keterangan == "Pajak motor hidup":
-                return "Pengendara tidak menggunakan helm"
-            elif deteksi_helm == "Pengendara menggunakan helm" and keterangan == "Pajak motor mati":
-                return "Pajak motor mati"
-            elif deteksi_helm == "Pengendara menggunakan helm" and keterangan == "Pajak motor hidup":
-                return "Pengendara tidak melanggar aturan lalu lintas"
-            else:
-                return "Kondisi tidak terdefinisi"
-            
-        new_df['jenis_pelanggaran']=buat_kesimpulan(deteksi_helm, keterangan)                    
-        new_df['kelayakan']=kelayakan(exp_date, hasil_pengecekan)                
-        new_df=new_df
+        primary_item = items[0] if items else None
+        groups.append({
+            "label": label,
+            "title": class_text_from_label(label),
+            "count": len(items),
+            "items": items,
+            "primary_item": primary_item,
+            "summary_text": get_class_summary_text(label, primary_item or {}),
+            "summary_confidence": primary_item["confidence_pct"] if primary_item else 0,
+            "summary_kelayakan": primary_item["kelayakan"] if primary_item else "-",
+            "summary_ocr": primary_item["ocr_text"] if primary_item else "-",
+        })
+    return groups
 
-    # Return the DataFrame as a JSON response
-    return render_template('web 2.html', new_df=new_df, df=df)
 
-ngrok_tunnel = ngrok.connect(8000)
-print('Public URL:', ngrok_tunnel.public_url)
-nest_asyncio.apply()
-app.run(host="0.0.0.0", port=8000)
-    
+def build_summary_counts(df: pd.DataFrame) -> Dict[str, int]:
+    return {label: int((df["group_label"] == label).sum()) for label in LABEL_ORDER}
+
+
+# ── Routes ───────────────────────────────────────────────────────────────────
+@app.route("/")
+def index_view():
+    ensure_dirs()
+    return render_template("tengah.html", history=load_history())
+
+
+@app.route("/predict", methods=["POST"])
+def detect_object():
+    ensure_dirs()
+    try:
+        file = request.files.get("image")
+        if not file or file.filename == "":
+            return render_template("prediction.html", error="Tidak ada gambar yang diupload.")
+
+        if not allowed_file(file.filename):
+            return render_template("prediction.html", error="Format file tidak didukung. Gunakan JPG, JPEG, atau PNG.")
+
+        analysis_id = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        safe_name = secure_filename(file.filename)
+        if not safe_name:
+            safe_name = f"input_{analysis_id}.jpg"
+        else:
+            stem, ext = os.path.splitext(safe_name)
+            safe_name = f"{stem}_{analysis_id}{ext.lower()}"
+
+        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        image_path = UPLOAD_DIR / safe_name
+        file.save(str(image_path))
+
+        # ── Stage 1: Deteksi pengendara ─────────────────────────────────────
+        driver_project = RUNS_DIR
+        driver_name = f"predict_{analysis_id}"
+        results_driver = model_driver.predict(
+            source=str(image_path),
+            conf=0.5,
+            save=True,
+            project=str(driver_project),
+            name=driver_name,
+            exist_ok=True,
+            verbose=False,
+        )
+
+        cropped_image_paths = []
+        for idx, result in enumerate(results_driver):
+            box_list = [
+                [int(x) for x in box.xyxy[0].tolist()]
+                for box in result.boxes
+                if round(float(box.conf), 2) >= 0.5
+            ]
+            if not box_list:
+                continue
+
+            img = Image.open(str(image_path)).convert("RGB")
+            cropped_img = img.crop(box_list[0])
+            crop_path = IMAGES_DIR / f"cropped_image_{analysis_id}_{idx}.jpg"
+            cropped_img.save(str(crop_path))
+            cropped_image_paths.append(str(crop_path))
+
+        if not cropped_image_paths:
+            return render_template("prediction.html", error="Pengendara tidak terdeteksi dalam gambar.")
+
+        # ── Stage 2: Deteksi objek ──────────────────────────────────────────
+        object_project = RUNS_DIR
+        object_name = f"object_{analysis_id}"
+        results_obj = model_object.predict(
+            source=cropped_image_paths,
+            conf=0.52,
+            save=True,
+            project=str(object_project),
+            name=object_name,
+            exist_ok=True,
+            verbose=False,
+        )
+
+        rows = []
+        for idx, result in enumerate(results_obj):
+            boxes = result.boxes
+            best_box = {0: (None, 0), 2: (None, 0)}
+            others = []
+
+            for box in boxes:
+                conf = round(float(box.conf), 2)
+                cls = int(box.cls)
+                if conf < 0.52:
+                    continue
+
+                if cls in [0, 2]:
+                    if conf > best_box[cls][1]:
+                        best_box[cls] = (box, conf)
+                elif cls in [1, 3]:
+                    others.append((box, conf, cls))
+
+            all_boxes = others[:]
+            for cls_id, (box, conf) in best_box.items():
+                if box is not None:
+                    all_boxes.append((box, conf, cls_id))
+
+            annotated_path = get_detected_image_path(result, cropped_image_paths[idx])
+
+            for box, conf, cls in all_boxes:
+                box_data = [int(x) for x in box.data[0][:4]]
+                rows.append(
+                    {
+                        "cropped_image_paths": cropped_image_paths[idx],
+                        "pred_box": box_data,
+                        "confidence": conf,
+                        "cls_raw": cls,
+                        "image_path": annotated_path,
+                    }
+                )
+
+        if not rows:
+            return render_template("prediction.html", error="Tidak ada objek yang terdeteksi.")
+
+        new_df = pd.DataFrame(rows)
+        new_df["group_label"] = new_df.apply(class_label_from_row, axis=1)
+
+        # ── Stage 3: Crop & simpan setiap objek ─────────────────────────────
+        new_df["cropped_image_saved_path"] = new_df.apply(crop_and_save_image, axis=1)
+
+        # ── Stage 4: OCR & final verdict ───────────────────────────────────
+        new_df = prepare_template_data(new_df)
+
+        summary_counts = build_summary_counts(new_df)
+        class_groups = build_class_groups(new_df)
+
+        original_rel = rel_static(str(image_path))
+        detected_rel = rel_static(new_df["image_path"].iloc[0])
+
+        # ── History ────────────────────────────────────────────────────────
+        append_history({
+            "analysis_id": analysis_id,
+            "timestamp": datetime.now().strftime("%d %b %Y, %H:%M"),
+            "original_image": original_rel,
+            "detected_image": detected_rel,
+            "kelayakan": str(new_df["kelayakan"].iloc[0]),
+            "jenis_pelanggaran": str(new_df["jenis_pelanggaran"].iloc[0]),
+            "summary_counts": summary_counts,
+            "total_objects": int(len(new_df)),
+            "class_groups": class_groups,
+        })
+
+        return render_template(
+            "web 2.html",
+            new_df=new_df,
+            original_image_path=original_rel,
+            detected_image_path=detected_rel,
+            summary_counts=summary_counts,
+            class_groups=class_groups,
+            analysis_id=analysis_id,
+        )
+
+    except Exception as e:
+        traceback.print_exc()
+        return render_template("prediction.html", error=f"Terjadi kesalahan: {str(e)}")
+
+
+if __name__ == "__main__":
+    ensure_dirs()
+    app.run(host="0.0.0.0", port=8000, debug=True)

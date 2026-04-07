@@ -1,70 +1,226 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
-    <meta charset="UTF-8">
-    <title>Prediction Results</title>
-    <!-- Tambahkan CSS atau styling jika diperlukan -->
-    <style>
-        /* CSS styles */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background-color: #f2f2f2;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hasil Analisis — SIPEKA</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #09090f;
+      --surface: rgba(18, 18, 26, 0.92);
+      --accent: #ff4d4d;
+      --accent2: #ff9f43;
+      --text: #eef0f8;
+      --muted: #8a8fa8;
+      --border: rgba(255,255,255,0.08);
+      --warning: #f59e0b;
+      --shadow: 0 24px 80px rgba(0,0,0,0.38);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Syne', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, rgba(255,77,77,0.12), transparent 26%),
+        linear-gradient(180deg, #08080d 0%, #0d0d14 48%, #0a0a0f 100%);
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+      background-size: 62px 62px;
+      pointer-events: none;
+      opacity: 0.18;
+    }
+
+    .wrapper {
+      position: relative;
+      z-index: 1;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 0 24px 72px;
+    }
+
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 36px;
+    }
+
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text);
+    }
+
+    .logo-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid;
+      place-items: center;
+      color: white;
+      font-weight: 800;
+      box-shadow: 0 12px 30px rgba(255,77,77,0.25);
+    }
+
+    .logo-text {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .logo-text span { color: var(--accent); }
+
+    .back-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+      font-family: 'Space Mono', monospace;
+      font-size: 12px;
+    }
+
+    .alert-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 28px;
+      padding: 42px 28px;
+      box-shadow: var(--shadow);
+      text-align: center;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .alert-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+    }
+
+    .alert-icon {
+      font-size: 56px;
+      margin-bottom: 18px;
+    }
+
+    .alert-title {
+      font-size: 28px;
+      font-weight: 800;
+      margin-bottom: 10px;
+    }
+
+    .alert-desc {
+      max-width: 600px;
+      margin: 0 auto 24px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.8;
+    }
+
+    .error-detail {
+      max-width: 680px;
+      margin: 0 auto 24px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(255,77,77,0.08);
+      border: 1px solid rgba(255,77,77,0.18);
+      color: #ff9a9a;
+      font-family: 'Space Mono', monospace;
+      font-size: 13px;
+      word-break: break-word;
+      text-align: left;
+    }
+
+    .btn-row {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 18px;
+      background: linear-gradient(135deg, var(--accent), #ff2d55);
+      color: white;
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 800;
+      box-shadow: 0 16px 36px rgba(255,77,77,0.25);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 18px;
+      background: rgba(255,255,255,0.03);
+      color: var(--text);
+      border-radius: 14px;
+      text-decoration: none;
+      font-weight: 800;
+      border: 1px solid var(--border);
+    }
+  </style>
 </head>
 <body>
-    <h1>Prediction Results</h1>
+<div class="wrapper">
+  <header>
+    <div class="header-inner">
+      <a href="/" class="logo">
+        <div class="logo-badge">SI</div>
+        <div class="logo-text">SI<span>PEKA</span></div>
+      </a>
+      <a href="/" class="back-btn">← Kembali</a>
+    </div>
+  </header>
 
-    <!-- Tambahkan konten yang ingin ditampilkan -->
-    <table>
-        <thead>
-            <tr>
-                <!-- Ganti dengan nama kolom yang sesuai di DataFrame Anda -->
-                <th>Pengendara</th>
-                <th>Cropped Image Path</th>
-                <th>classes</th>
-                <th>Confidence</th>
-                <th>Pred Box</th>
-                <th>Kelayakan</th>
-                <th>Jenis Pelanggaran</th>
-                <!-- Tambahkan kolom-kolom lain sesuai kebutuhan -->
-            </tr>
-        </thead>
-        <tbody>
-            <!-- Gunakan loop untuk menampilkan hasil prediksi -->
-            {% for index, row in new_df.iterrows() %}
-                <tr>
-                    <!-- Ganti 'image_path', 'cropped_image_saved_path', 'cls', 'confidence', 'pred_box' -->
-                    <td>{{ row['image_path'] }}</td>
-                    <td>{{ row['cropped_image_saved_path'] }}</td>
-                    <td>
-                        {% if row['cls'] == 1 %}
-                            Helm
-                        {% elif row['cls'] == 3 %}
-                            No-Helm
-                        {% else %}
-                            {{ row['cls'] }}  <!-- Nilai lain jika tidak sesuai kondisi -->
-                        {% endif %}
-                    </td>
-                    <td>{{ row['confidence'] }}</td>
-                    <td>{{ row['pred_box'] }}</td>
-                    <td>{{row['kelayakan']}} </td>
-                    <td>{{row['jenis_pelanggaran']}}</td>
-                    <!-- Tambahkan kolom-kolom lain sesuai kebutuhan -->
-                </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-
-    <!-- Tambahkan elemen atau konten lainnya jika diperlukan -->
-
+  <div class="alert-card">
+    <div class="alert-icon">⚠️</div>
+    <div class="alert-title">Deteksi Gagal</div>
+    <div class="alert-desc">
+      Terjadi masalah saat memproses gambar. Pastikan gambar berisi pengendara motor yang terlihat jelas dan format file sesuai.
+    </div>
+    {% if error is defined %}
+      <div class="error-detail">{{ error }}</div>
+    {% endif %}
+    <div class="btn-row">
+      <a href="/" class="btn-primary">← Coba Gambar Lain</a>
+      <a href="/" class="btn-secondary">Kembali ke Beranda</a>
+    </div>
+  </div>
+</div>
 </body>
 </html>
